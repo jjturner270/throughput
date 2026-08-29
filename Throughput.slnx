@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Throughput.Headless/Throughput.Headless.csproj" />
+    <Project Path="src/Throughput.Scenarios/Throughput.Scenarios.csproj" />
+    <Project Path="src/Throughput.Sim/Throughput.Sim.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Throughput.Sim.Tests/Throughput.Sim.Tests.csproj" />
+  </Folder>
+</Solution>
