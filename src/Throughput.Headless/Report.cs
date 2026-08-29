@@ -54,6 +54,11 @@ public static class Report
             sb.AppendLine($"Idle                {w.Pct(w.Idle).ToString("0.0")}%");
             sb.AppendLine($"Distance            {w.DistanceKm.ToString("0.00")} km");
             sb.AppendLine($"Tasks               {w.TasksCompleted.ToString("N0")}");
+            foreach (var kv in w.TimePerStation.OrderByDescending(kv => kv.Value))
+            {
+                sb.AppendLine($"  at {DisplayName(kv.Key),-12} {SimTime.FormatDuration(kv.Value),10}  {w.Pct(kv.Value).ToString("0.0")}%");
+            }
+
             sb.AppendLine();
         }
 
@@ -72,6 +77,35 @@ public static class Report
         sb.AppendLine("FINAL STATE HASH");
         sb.AppendLine();
         sb.AppendLine(result.FinalStateHash);
+
+        if (result.SampleItemProfile is { } profile)
+        {
+            sb.AppendLine();
+            sb.AppendLine("PRODUCT PROFILE");
+            sb.AppendLine();
+            sb.AppendLine(profile.ItemId);
+            sb.AppendLine();
+            sb.AppendLine($"CREATED             {SimTime.FormatClockMs(profile.CreatedAt)}");
+            sb.AppendLine($"SHIPPED             {SimTime.FormatClockMs(profile.ShippedAt)}");
+            sb.AppendLine($"LEAD TIME           {SimTime.FormatDurationMs(profile.LeadTimeMs)}");
+            sb.AppendLine();
+            long remaining = profile.LeadTimeMs;
+            foreach (var e in profile.Timeline)
+            {
+                remaining -= e.DurationMs;
+                sb.AppendLine($"{e.Label,-14} {SimTime.FormatDuration(e.DurationMs),10}");
+            }
+
+            sb.AppendLine($"{"UNACCOUNTED",-14} {SimTime.FormatDuration(remaining),10}");
+            if (profile.BiggestDelay is { } delay)
+            {
+                sb.AppendLine();
+                sb.AppendLine("BIGGEST DELAY");
+                sb.AppendLine();
+                sb.AppendLine($"{delay.Label,-14} {SimTime.FormatDuration(delay.DurationMs),10}");
+            }
+        }
+
         return sb.ToString();
     }
 

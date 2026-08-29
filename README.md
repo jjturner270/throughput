@@ -25,6 +25,7 @@ Throughput/
 ## Requirements
 
 - .NET SDK 10 (`dotnet` on PATH, or `~/.dotnet/dotnet`)
+- Godot 4.7+ (`.NET` / mono build) to run the game
 
 ## Build & Test
 
@@ -32,6 +33,36 @@ Throughput/
 dotnet build Throughput.slnx
 dotnet test tests/Throughput.Sim.Tests
 ```
+
+## Run the Game (Godot)
+
+Requires the **Godot .NET (mono) build** — the plain `godot` binary has no C# support and will fail with `No loader found for resource ... (expected type: Script)`.
+
+From the repo root:
+
+```bash
+./run.sh            # uses /Applications/Godot_mono.app
+```
+
+or explicitly:
+
+```bash
+/Applications/Godot_mono.app/Contents/MacOS/Godot --path src/Throughput.Game
+```
+
+(If `godot` on your PATH points at the non-mono `/Applications/Godot.app`, either repoint the symlink to `Godot_mono.app` or use `./run.sh`.)
+
+The game renders the factory (machines colored by state, moving workers, moving items, growing queue bars) and drives the same deterministic `Throughput.Sim` core. The final state hash matches the headless run exactly.
+
+Controls:
+
+| Key | Action |
+|---|---|
+| `Space` | Pause / resume |
+| `1` `2` `3` | 1× / 4× / 16× |
+| `4` | MAX (processes events as fast as possible) |
+| `R` | Restart the shift |
+| Click | Inspect a machine or worker (live state accounting) |
 
 ## Run a Scenario Headless
 
@@ -104,8 +135,8 @@ The final state is canonicalized (machines/workers/items/queues sorted by ID) an
 - [x] **M1 — Deterministic core:** scenario loads, time, events, machines, workers, queues, items, shipping, metrics, shift end. Headless runner is bit-for-bit reproducible.
 - [x] **M2 — Full accounting:** machine state, worker state, and item lead-time are 100% accounted and validated.
 - [x] **M3 — Replay + hashing:** runs serialize to replay files, replay reproduces identical hashes, CI-able determinism tests.
-- [ ] **M4 — Godot factory:** rendering, temp assets, machine states, worker/item movement, visible queue growth, speed controls (Pause, 1×, 4×, 16×, MAX).
-- [ ] **M5 — Inspectors:** machine / worker / queue / item inspectors fed by real simulation data.
+- [x] **M4 — Godot factory:** factory renders, machines display state, workers and items move, queues visibly grow, speed controls (Pause, 1×, 4×, 16×, MAX).
+- [x] **M5 — Inspectors:** click a machine / worker for live state accounting, or an item for the product profiler (created/shipped, lead time, per-station timeline, biggest delay) with a focus-on-floor path trace.
 - [ ] **M6 — Editable layout:** move machines, grid snap, no overlap, travel distances update, results change.
 - [ ] **M7 — Run comparison:** stored baseline, rerun, metric deltas (partially available headless via `--compare`).
 

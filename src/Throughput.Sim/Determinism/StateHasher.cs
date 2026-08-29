@@ -28,7 +28,7 @@ public sealed class StateHasher
     public string Finish()
     {
         byte[] bytes = _hash.GetHashAndReset();
-        return Convert.ToHexStringLower(bytes);
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private void Append(string text) => _hash.AppendData(Encoding.UTF8.GetBytes(text));

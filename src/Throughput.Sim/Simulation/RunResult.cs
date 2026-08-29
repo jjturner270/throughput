@@ -7,4 +7,5 @@ public sealed class RunResult
     public required RunSummary Summary { get; init; }
     public required string FinalStateHash { get; init; }
     public required long EventsProcessed { get; init; }
+    public ItemProfileView? SampleItemProfile { get; init; }
 }

@@ -47,11 +47,19 @@ public sealed class Simulation
     public RunResult Run()
     {
         Initialize();
+        AdvanceTo(ShiftDurationMs);
+        return CompleteShift();
+    }
 
+    public void AdvanceTo(long timeMs)
+    {
+        Initialize();
+        long target = Math.Min(timeMs, ShiftDurationMs);
         while (_events.TryPop(out var ev))
         {
-            if (ev.Time >= ShiftDurationMs)
+            if (ev.Time >= target)
             {
+                _events.Push(ev);
                 break;
             }
 
@@ -60,27 +68,74 @@ public sealed class Simulation
             _eventsProcessed++;
             ProcessEvent(ev);
         }
+    }
 
+    public void AdvanceEvents(long maxEvents)
+    {
+        Initialize();
+        while (maxEvents-- > 0 && _events.TryPop(out var ev))
+        {
+            if (ev.Time >= ShiftDurationMs)
+            {
+                _events.Push(ev);
+                break;
+            }
+
+            _now = ev.Time;
+            SampleAccumulators();
+            _eventsProcessed++;
+            ProcessEvent(ev);
+        }
+    }
+
+    public RunResult CompleteShift()
+    {
+        if (_completed)
+        {
+            throw new InvalidOperationException("CompleteShift may only be called once");
+        }
+
+        _completed = true;
         _now = ShiftDurationMs;
         SampleAccumulators();
         FinalizeState();
         Validate();
         var summary = BuildSummary();
         var hash = ComputeStateHash();
+        var sample = Items.Values
+            .Where(i => i.ShippedAt >= 0)
+            .OrderBy(i => i.CreatedAt)
+            .ThenBy(i => i.Id, StringComparer.Ordinal)
+            .Select(i => ProfileItem(i.Id))
+            .FirstOrDefault();
         return new RunResult
         {
             Scenario = _scenario,
             Commands = _commands,
             Summary = summary,
             FinalStateHash = hash,
-            EventsProcessed = _eventsProcessed
+            EventsProcessed = _eventsProcessed,
+            SampleItemProfile = sample
         };
     }
 
+    public long CurrentTime => _now;
+
+    public long EventsProcessed => _eventsProcessed;
+
     public long ShiftDurationMs => ShiftEndMs - ShiftStartMs;
+
+    private bool _initialized;
+    private bool _completed;
 
     private void Initialize()
     {
+        if (_initialized)
+        {
+            return;
+        }
+
+        _initialized = true;
         foreach (var p in _scenario.Processes)
         {
             _processById[p.Id] = p;
@@ -198,6 +253,7 @@ public sealed class Simulation
     {
         var task = worker.CurrentTask!;
         worker.Position = task.PickupPosition;
+        worker.HasLeg = false;
 
         if (task.Kind == TaskKind.LoadMachine)
         {
@@ -264,6 +320,11 @@ public sealed class Simulation
             long distMm = (long)worker.Position.ManhattanDistance(task.DropPosition) * _scenario.Ruleset.TileMm;
             worker.TotalDistanceMm += distMm;
             long travel = GridPosition.TravelTimeMs(worker.Position, task.DropPosition, worker.SpeedMmPerSec, _scenario.Ruleset.TileMm);
+            worker.HasLeg = true;
+            worker.LegFrom = worker.Position;
+            worker.LegTo = task.DropPosition;
+            worker.LegStartTime = _now;
+            worker.LegEndTime = _now + travel;
             Schedule(EventType.WorkerArriveDrop, worker.Id, _now + travel);
         }
     }
@@ -272,6 +333,7 @@ public sealed class Simulation
     {
         var task = worker.CurrentTask!;
         worker.Position = task.DropPosition;
+        worker.HasLeg = false;
         worker.SetState(WorkerState.Loading, _now);
         Schedule(EventType.WorkerDropComplete, worker.Id, _now + _scenario.Ruleset.LoadTimeMs);
     }
@@ -318,10 +380,10 @@ public sealed class Simulation
     private void CompleteWorkerTask(Worker worker)
     {
         var task = worker.CurrentTask!;
+        worker.SetState(WorkerState.Idle, _now);
         task.CarriedItemId = null;
         worker.CurrentTask = null;
         worker.TasksCompleted++;
-        worker.SetState(WorkerState.Idle, _now);
         Dispatch();
     }
 
@@ -558,6 +620,11 @@ public sealed class Simulation
         long distMm = (long)worker.Position.ManhattanDistance(task.PickupPosition) * _scenario.Ruleset.TileMm;
         worker.TotalDistanceMm += distMm;
         long travel = GridPosition.TravelTimeMs(worker.Position, task.PickupPosition, worker.SpeedMmPerSec, _scenario.Ruleset.TileMm);
+        worker.HasLeg = true;
+        worker.LegFrom = worker.Position;
+        worker.LegTo = task.PickupPosition;
+        worker.LegStartTime = _now;
+        worker.LegEndTime = _now + travel;
         Schedule(EventType.WorkerArrivePickup, worker.Id, _now + travel);
     }
 
@@ -758,7 +825,7 @@ public sealed class Simulation
             .ToList();
         var workers = Workers.Values
             .OrderBy(w => w.Id, StringComparer.Ordinal)
-            .Select(w => new WorkerStats(w.Id, (long[])w.TimeInState.Clone(), duration, w.TotalDistanceMm, w.TasksCompleted))
+            .Select(w => new WorkerStats(w.Id, (long[])w.TimeInState.Clone(), duration, w.TotalDistanceMm, w.TasksCompleted, new Dictionary<string, long>(w.TimePerStation)))
             .ToList();
         var queues = Queues.Values
             .Where(q => q.Id != _scenario.DockId)
@@ -818,6 +885,7 @@ public sealed class Simulation
             h.Field("dist", w.TotalDistanceMm);
             h.Field("tasks", w.TasksCompleted);
             h.Field("pri", string.Join(",", w.Priority));
+            h.Field("station_times", string.Join(",", w.TimePerStation.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}:{kv.Value}")));
         }
 
         foreach (var q in Queues.Values.OrderBy(x => x.Id, StringComparer.Ordinal))
@@ -845,6 +913,19 @@ public sealed class Simulation
         }
 
         return h.Finish();
+    }
+
+    public ItemProfileView ProfileItem(string itemId)
+    {
+        var item = Items[itemId];
+        var timeline = ItemProfiler.Timeline(item);
+        return new ItemProfileView(
+            item.Id,
+            item.CreatedAt,
+            item.ShippedAt,
+            ItemProfiler.TotalLeadTimeMs(item),
+            timeline,
+            ItemProfiler.BiggestDelay(timeline));
     }
 
     private long NextTaskId() => _taskCounter++;

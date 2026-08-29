@@ -18,7 +18,8 @@ public sealed record WorkerStats(
     long[] TimeInState,
     long TotalMs,
     long DistanceMm,
-    long TasksCompleted)
+    long TasksCompleted,
+    IReadOnlyDictionary<string, long> TimePerStation)
 {
     public long Idle => TimeInState[(int)WorkerState.Idle];
     public long Moving => TimeInState[(int)WorkerState.Moving];
